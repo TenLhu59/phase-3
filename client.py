@@ -2,13 +2,18 @@ from socket import *
 import os
 from checksum import *
 import pickle
-import base64
+import random
+from threading import Thread
 buffersize = 2048
 HOST = '127.0.0.1'  # It is local UDP
-ServerPort = 3240 # set serverport
+ServerPort = 3230 # set serverport
 pktCount = 0
 seqNum = 0
 clientSocket = socket(AF_INET,SOCK_DGRAM) # create UDP socket for client
+# option_input = int(input("Please type the option you want to use: 1,2,3\n"))
+# error_per_input = int(input("please type the error percentage you want 1-99\n"))
+option = 3
+error_per = 20
 
 
 def mk_pkg(img_path):
@@ -20,11 +25,13 @@ def mk_pkg(img_path):
             packets.append(bmp.read(buffersize))  # reference from TA Bhargavi
     return packets
 
+
 def isACK(CheckS, sequence, acknow, trackSeq):
     if CheckS == acknow and sequence == trackSeq:
         return 1
     else:
         return 0
+
 
 class CombinePacket: # combine the checksum and seqNum in one pkg
     def __init__(self,  CS_client, seqNum, pkg): #pkg
@@ -94,6 +101,10 @@ for pkg in pkgs:
         CS = rComb_pkg.CS
         RseqNum = rComb_pkg.RseqNum
         ACK = rComb_pkg.ACK
+        # Option2 corrupt the ACK
+        if option == 2 and error_per>random.randint(1,99) :
+            ACK = 254 #corrupt the ack to 254
+            print('ACK packet wrong, please transmit again')
     # if the packet sent was corrupted or ack is not aligned, send the same packet again
 
     seqNum = 1 - seqNum     # change sequence number
