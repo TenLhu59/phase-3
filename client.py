@@ -2,12 +2,13 @@ from socket import *
 import os
 from checksum import *
 import pickle
-import base64
+import time
+import random
 buffersize = 2048
 HOST = '127.0.0.1'  # It is local UDP
 ServerPort = 3240 # set serverport
-pktCount = 0
 seqNum = 0
+user_input = 0
 clientSocket = socket(AF_INET,SOCK_DGRAM) # create UDP socket for client
 
 
@@ -27,10 +28,12 @@ def isACK(CheckS, sequence, acknow, trackSeq):
         return 0
 
 class CombinePacket: # combine the checksum and seqNum in one pkg
-    def __init__(self,  CS_client, seqNum, pkg): #pkg
+    def __init__(self,  CS_client, seqNum, pkg, u_input, error_percent): #pkg
         self.CS_client = CS_client
         self.seqNum = seqNum
         self.pkg = pkg
+        self.u_input = u_input
+        self.error_percent = error_percent
 
 
 class ReturnCombinePacket: # combine the checksum and seqNum and ACK in one
@@ -39,70 +42,62 @@ class ReturnCombinePacket: # combine the checksum and seqNum and ACK in one
         self.server_seqNum = server_seqNum
         self.ACK = ACK
 
+
 # Ref:https://stackoverflow.com/questions/48974070/object-transmission-in-python-using-pickle
 # Ref:https://stackoverflow.com/questions/53576851/socket-programming-in-python-using-pickle
 
+while True:
+    print("Choose which option to implement:")
+    print("1 - No loss/bit-errors")
+    print("2 - ACK packet bit-error")
+    print("3 - Data packet bit-error")
+    print("0 - Quit")
+    user_input = input()
+    user_input = int(user_input)
+    if user_input == 0:
+        break
+    for x in range(0, 65, 5):       # loop to increment the error percentage in one go
+        error_per = x
+        start = time.time()
+        pkgs = mk_pkg('./back.jpg')
 
-pkgs = mk_pkg('./back.jpg')
 
+        # packets to the server
+        for pkg in pkgs:
+            # transition from wait for call 0 to wait for ACK 0
 
-# packets to the server
-for pkg in pkgs:
-    # transition from wait for call 0 to wait for ACK 0
-    # To be specify,ACK = 1 means ACK ,ACK = 0 means NAK
-    # print(pkg)
+            while True:
+                CS_client = checksumGen(pkg)
+                comb_pkg = CombinePacket(CS_client, seqNum, pkg, user_input, error_per)    # sndpkt = make_pkt(0,data,checksum)
+                comb_pkg = pickle.dumps(comb_pkg)
+                clientSocket.sendto(comb_pkg, (HOST, ServerPort))  # send packets to server udt_send()
+                # send packets to server
 
-    CS_client = checksumGen(pkg)
+                # wait for server to send back reply
+                rComb_pkg, serverAddress = clientSocket.recvfrom(buffersize)
+                rComb_pkg = pickle.loads(rComb_pkg)
+                CS = rComb_pkg.CS
+                RseqNum = rComb_pkg.server_seqNum
+                ACK = rComb_pkg.ACK
+                if user_input == 2 and error_per > random.randint(0, 100):
+                    ACK = 254  # corrupt the ack to 254
+                    #print('ACK packet wrong, please transmit again')
+                # receive acknowledgement from server
 
-    comb_pkg = CombinePacket(CS_client, seqNum, pkg)    # sndpkt = make_pkt(0,data,checksum)
-    comb_pkg = pickle.dumps(comb_pkg)
-    clientSocket.sendto(comb_pkg, (HOST, ServerPort))  # udt_send()
+                # if statement breaks from the while loop when the correct data is received from receiver
+                if isACK(CS, RseqNum, ACK, seqNum) == 1:
+                    break
+            # if the packet sent was corrupted or ack is not aligned, send the same packet again
 
-    # wait for server to send back reply
-    rComb_pkg, serverAddress = clientSocket.recvfrom(buffersize)
-    rComb_pkg = pickle.loads(rComb_pkg)
-    CS = rComb_pkg.CS
-    RseqNum = rComb_pkg.server_seqNum
-    ACK = rComb_pkg.ACK
+            seqNum = 1 - seqNum     # change sequence number
+        end = time.time()
 
-    # remove checksum, sequence number and ACK date from the packet
-    #ACK = int(recievedMsg[0])
-    #server_seqNum = int(recievedMsg[1])
-    #print(f"Received ACK = {ACK},sequence_number = {server_seqNum}")
-    #server_seqNum = 1 - server_seqNum
+        # To compute execution time
+        total_time = end - start
+        print("Total time for " + str(x) + "% error: " + str(total_time))
 
-    while isACK(CS, RseqNum, ACK, seqNum) == 0: # isACK function checks if ACK is corrupt and the sequence number matches
-        CS_client = checksumGen(pkg)
-        comb_pkg = CombinePacket(CS_client, seqNum, pkg)    # sndpkt = make_pkt(0,data,checksum)
-        comb_pkg1 = pickle.dumps(comb_pkg)
-        clientSocket.sendto(comb_pkg1, (HOST, ServerPort))  # send packets to server udt_send()
-        # send packets to server
-
-        # wait for server to send back reply
-        """
-        recievedMsg, serverAddress = clientSocket.recvfrom(buffersize)
-        recievedMsg = recievedMsg.decode()
-        # remove checksum, sequence number and ACK date from the packet
-        ACK = int(recievedMsg[0])
-        server_seqNum = int(recievedMsg[1])
-        print(f"Received ACK = {ACK},sequence_number = {server_seqNum}")
-        server_seqNum = 1 - server_seqNum
-        """
-        # receive acknowledgement from server
-        rComb_pkg, serverAddress = clientSocket.recvfrom(buffersize)
-        rComb_pkg = pickle.loads(rComb_pkg)
-        CS = rComb_pkg.CS
-        RseqNum = rComb_pkg.RseqNum
-        ACK = rComb_pkg.ACK
-    # if the packet sent was corrupted or ack is not aligned, send the same packet again
-
-    seqNum = 1 - seqNum     # change sequence number
+        # if the option is no loss then no need to run for loop to get all 60 increments
+        if user_input == 1:
+            break
 
 clientSocket.close()
-
-
-
-
-
-
-
